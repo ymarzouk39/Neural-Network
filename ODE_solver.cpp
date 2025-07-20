@@ -15,19 +15,28 @@ VectorXd solve_ode_rk4(VectorXd initial_conditions, int input_parameters, int ba
 void save_samples(VectorXd samples, std::string file_path);
 
 int main(int argc, char* argv) {
-	function<VectorXd(double time, VectorXd)> ode_function = [](double time,VectorXd x) {
-		VectorXd dxdt = -x;
-		return dxdt;
+	function<VectorXd(double, VectorXd)> simple_pendulum = [](double time, VectorXd y) {
+		VectorXd dy = VectorXd::Zero(y.rows());
+		dy(0) = y(1);
+		dy(1) = -9.8 * sin(y(0)); // Assuming a simple pendulum equation
+		return dy;
 		};
 
-	VectorXd initial_conditions = VectorXd::Zero(1);
+	function<VectorXd(double, VectorXd)> func = [](double time, VectorXd y) {
+		VectorXd dy = VectorXd::Zero(y.rows());
+		dy(0) = y(0);
+		return dy;
+		};
+
+	VectorXd initial_conditions = VectorXd::Zero(2);
 	initial_conditions(0) = 1.0; // Example initial condition
+	initial_conditions(1) = 0.0; // Example initial condition
 
 	int input_parameters = static_cast<int>(initial_conditions.rows());
-	int batch_size = 10; // Number of time steps
-	double end_time = 1.0; // Total time for the simulation
-	VectorXd samples = solve_ode_rk4(initial_conditions, input_parameters, batch_size, end_time, ode_function);
-	save_samples(samples, "ode_samples.txt");
+	int batch_size = 1000; // Number of time steps
+	double end_time = 10.0; // Total time for the simulation
+	VectorXd samples = solve_ode_rk4(initial_conditions, input_parameters, batch_size, end_time, simple_pendulum);
+	save_samples(samples, "C:\\Users\\Yousef Marzouk\\Documents\\MATLAB\\ode_samples_pendulum.txt");
 }
 
 VectorXd solve_ode_euler(VectorXd initial_conditions, int input_parameters, int batch_size, 

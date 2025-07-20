@@ -4,7 +4,8 @@
 #include <functional>
 #include <Eigen/Eigen>
 
-using Eigen::MatrixXd, Eigen::VectorXd, std::function, std::vector;
+using Eigen::MatrixXd, Eigen::VectorXd, std::function, std::vector,
+	Eigen::seqN;
 
 class NeuralNetwork {
 public:
@@ -31,6 +32,16 @@ public:
 				return this->relu(input);
 				};
 		}
+		else if (activation_function_in == "tanh") {
+			activation_function = [this](double input) {
+				return this->hypertan(input);
+				};
+		}
+		else if (activation_function_in == "sigmoid") {
+			activation_function = [this](double input) {
+				return this->sigmoid(input);
+				};
+		}
 		if (output_layer_functions_in == "relu") {
 			for (int row = 0; row < output_parameters; row++) {
 				output_layer_functions.push_back([this](double input) {
@@ -47,14 +58,16 @@ public:
 		}
 	}
 
-	void evolution_train(int epoch_count, double diversity_rate, VectorXd input_values, VectorXd expected_values, function<double(VectorXd, VectorXd)> cost_function) {
+	void evolution_train(int epoch_count, double diversity_rate, double decay_rate, VectorXd input_values, 
+		VectorXd expected_values, function<double(VectorXd, VectorXd)> cost_function) {
 		for (int epoch = 1; epoch <= epoch_count; epoch++) {
-			double parent_cost = evaluate_cost(evaluate(input_values), expected_values, cost_function);
+			double parent_cost = evaluate_cost(evaluate_many(input_values), expected_values, cost_function);
 			vector<MatrixXd> parent_weight_matrices = weight_matrices;
+			double learning_rate = diversity_rate * exp(-epoch * decay_rate);
 			for (int layer = 0; layer < weight_matrices.size(); layer++) {
-				weight_matrices[layer] += MatrixXd::Random(weight_matrices[layer].rows(), weight_matrices[layer].cols()) * diversity_rate;
+				weight_matrices[layer] += MatrixXd::Random(weight_matrices[layer].rows(), weight_matrices[layer].cols()) * learning_rate;
 			}
-			double child_cost = evaluate_cost(evaluate(input_values), expected_values, cost_function);
+			double child_cost = evaluate_cost(evaluate_many(input_values), expected_values, cost_function);
 			if (child_cost < parent_cost) {
 				std::cout << "Epoch: " << epoch << ", Cost improved from " << parent_cost << " to " << child_cost << std::endl;
 			}
@@ -63,13 +76,19 @@ public:
 				weight_matrices = parent_weight_matrices;
 			}
 		}
+		std::cout << "final model cost: " << evaluate_cost(evaluate_many(input_values), expected_values, cost_function) << std::endl;
+	}
+
+	void grad_descent_train(int epoch_count, double diversity_rate, double decay_rate, VectorXd input_values, 
+		VectorXd expected_values, function<double(VectorXd, VectorXd)> cost_function) {
+		//not implemented
 	}
 
 	double evaluate_cost(VectorXd input_values, VectorXd expected_values, function<double(VectorXd, VectorXd)> cost_function) {
 		double cost = 0;
 		for (int batch = 0; batch < input_values.rows() / output_parameters; batch++) {
 			int index = batch * output_parameters;
-			cost += cost_function(input_values.segment(index, index + output_parameters), expected_values.segment(index, index + output_parameters));
+			cost += cost_function(input_values(seqN(index, output_parameters)), expected_values(seqN(index, output_parameters)));
 		}
 		return cost;
 	}
@@ -85,6 +104,14 @@ public:
 		return layer_values;
 	}
 
+	VectorXd evaluate_many(VectorXd input) {
+		VectorXd output = VectorXd::Zero(input.rows());
+		for (int batch = 0; batch < output.rows()/output_parameters; batch++) {
+			output(seqN(batch * output_parameters, output_parameters)) =
+				evaluate(input(seqN(batch * output_parameters, output_parameters)));
+		}
+		return output;
+	}
 
 private:
 
@@ -111,6 +138,10 @@ private:
 
 	double sigmoid(double in) {
 		return 1 / (1 + exp(-in));
+	}
+
+	double hypertan(double in) {
+		return tanh(in);
 	}
 
 
