@@ -80,8 +80,20 @@ public:
 	}
 
 	void grad_descent_train(int epoch_count, double diversity_rate, double decay_rate, VectorXd input_values, 
-		VectorXd expected_values, function<double(VectorXd, VectorXd)> cost_function) {
-		//not implemented
+		VectorXd expected_values, function<double(VectorXd, VectorXd)> cost_function, function<VectorXd(VectorXd, VectorXd)> derivative_cost_function) {
+		for (int epoch = 1; epoch <= epoch_count; epoch++) {
+			MatrixXd activated_values = MatrixXd::Zero(neuron_count, layer_count);
+			MatrixXd pre_activated_values = MatrixXd::Zero(neuron_count, layer_count);
+			double cost = evaluate_cost(evaluate_save(input_values, activated_values, pre_activated_values), expected_values, cost_function);
+			VectorXd cost_derivative = derivative_cost_function(evaluate_many(input_values), expected_values);
+			activate_hidden_neurons_derivative(cost_derivative);
+			for (int layer = layer_count - 1; layer >= 0; layer--) {
+				MatrixXd gradient = cost_derivative * (activated_values.col(layer)).transpose();
+
+
+			}
+
+		}
 	}
 
 	double evaluate_cost(VectorXd input_values, VectorXd expected_values, function<double(VectorXd, VectorXd)> cost_function) {
@@ -103,6 +115,20 @@ public:
 		activate_output_neurons(layer_values);
 		return layer_values;
 	}
+	VectorXd evaluate_save(VectorXd input, MatrixXd &activated_values, MatrixXd & pre_activated_values) {
+		VectorXd layer_values = weight_matrices[0] * input;
+
+		for (int layer = 1; layer <= layer_count; layer++) {
+			pre_activated_values.col(layer - 1) = layer_values;
+			activate_hidden_neurons(layer_values);
+			activated_values.col(layer - 1) = layer_values;
+			layer_values = weight_matrices[layer] * layer_values;
+		}
+		pre_activated_values.col(layer_count-1) = layer_values;
+		activate_output_neurons(layer_values);
+		activated_values.col(layer_count - 1) = layer_values;
+		return layer_values;
+	}
 
 	VectorXd evaluate_many(VectorXd input) {
 		VectorXd output = VectorXd::Zero(input.rows());
@@ -118,6 +144,11 @@ private:
 	void activate_hidden_neurons(VectorXd &input) {
 		for (int row = 0; row < input.rows(); row++) {
 			input(row) = activation_function(input(row));
+		}
+	}
+	void activate_hidden_neurons_derivative(VectorXd& input) {
+		for (int row = 0; row < input.rows(); row++) {
+			input(row) = derivative_activation_function(input(row));
 		}
 	}
 
@@ -151,6 +182,7 @@ private:
 	int layer_count;
 	int neuron_count;
 	function<double(double)> activation_function;
+	function<double(double)> derivative_activation_function;
 	vector<MatrixXd> weight_matrices;
 	vector <function<double(double)>> output_layer_functions;
 
