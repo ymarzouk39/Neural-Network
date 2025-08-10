@@ -1,41 +1,51 @@
 #include <fstream>
 #include "NeuralNetwork.cpp"
 
-VectorXd read_samples(int sample_size, std::string file_path);
+MatrixXd read_samples(int sample_size, std::string file_path);
 void save_samples(VectorXd samples, std::string file_path);
 
 int main(int argc, char* argv) {
-	NeuralNetwork* net = new NeuralNetwork(1, 1, 1, 5, "tanh", "relu");
+	NeuralNetwork* net = new NeuralNetwork(1, 1, 1, 1, "relu", "relu");
 
-	VectorXd input_values = VectorXd::LinSpaced(100, 0, 10);
-	VectorXd expected_values = read_samples(100, "C:\\Users\\Yousef Marzouk\\Documents\\MATLAB\\samples.txt");
+	//VectorXd time_span = VectorXd::LinSpaced(100, 0, 10);
+	VectorXd time_span = VectorXd::Zero(1);
+	time_span(0) = 5.0;
+	MatrixXd input_values = MatrixXd::Zero(1, 1);
+	input_values.col(0) = time_span;
+	MatrixXd expected_values = read_samples(1, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\samples.txt");
 
 	function<double(VectorXd, VectorXd)> least_squares = [](VectorXd input, VectorXd expected) {
 		double cost = 0;
 		for (int row = 0; row < input.rows(); row++) {
-			cost += pow(input(row) - expected(row), 2);
+			cost += 0.5 * pow(input(row) - expected(row), 2);
 		}
 		return cost;
 	};
 
-	net->evolution_train(10000, 1, 0.0001, input_values, expected_values, least_squares);
+	function<VectorXd(VectorXd, VectorXd)> least_squares_derivative = [](VectorXd input, VectorXd expected) {
+		VectorXd result = input - expected;
+		return result;
+		};
 
-	VectorXd output = net->evaluate_many(input_values);
-	save_samples(output, "C:\\Users\\Yousef Marzouk\\Documents\\MATLAB\\nn_samples.txt");
+	//net->evolution_train(1000, 0.1, 1e-4, input_values, expected_values, least_squares);
+	net->grad_descent_train(100, 0.01, 1e-4, input_values, expected_values, least_squares,least_squares_derivative);
+
+	MatrixXd output = net->evaluate_many(input_values);
+	save_samples(output, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\nn_samples.txt");
 	delete net;
 }
 
-VectorXd read_samples(int sample_size, std::string file_path) {
+MatrixXd read_samples(int sample_size, std::string file_path) {
 	std::ifstream file(file_path);
 
 	if (!file.is_open()) {
 		std::cerr << "Error opening file: " << file_path << std::endl;
-		return VectorXd();
+		return MatrixXd();
 	}
 	
-	VectorXd samples = VectorXd::Zero(sample_size);
+	MatrixXd samples = MatrixXd::Zero(sample_size, 1);
 	for (int batch = 0; batch < sample_size; batch++) {
-		file >> samples(batch);
+		file >> samples(batch, 0);
 	}
 	return samples;
 }

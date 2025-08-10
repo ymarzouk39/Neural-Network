@@ -16,20 +16,28 @@ public:
 		:input_parameters(input_parameters_in), output_parameters(output_parameters_in), layer_count(layer_count_in), 
 		neuron_count(neuron_count_in) {
 		
-		MatrixXd input_weights = MatrixXd::Constant(neuron_count, input_parameters, DEFAULT_WEIGHT);
-		weight_matrices.push_back(input_weights);
-
-		MatrixXd layer_weights = MatrixXd::Constant(neuron_count, neuron_count, DEFAULT_WEIGHT);
-		for (int i = 1; i < layer_count; i++) {
-			weight_matrices.push_back(layer_weights);
+		if (layer_count == 1) {
+			MatrixXd weight_matrix = MatrixXd::Constant(output_parameters, input_parameters, DEFAULT_WEIGHT);
+			weight_matrices.push_back(weight_matrix);
 		}
+		else {
+			MatrixXd input_weights = MatrixXd::Constant(neuron_count, input_parameters, DEFAULT_WEIGHT);
+			weight_matrices.push_back(input_weights);
 
-		MatrixXd output_weights = MatrixXd::Constant(output_parameters, neuron_count, DEFAULT_WEIGHT);
-		weight_matrices.push_back(output_weights);
+			MatrixXd layer_weights = MatrixXd::Constant(neuron_count, neuron_count, DEFAULT_WEIGHT);
+			for (int i = 1; i < layer_count - 1; i++) {
+				weight_matrices.push_back(layer_weights);
+			}
 
+			MatrixXd output_weights = MatrixXd::Constant(output_parameters, neuron_count, DEFAULT_WEIGHT);
+			weight_matrices.push_back(output_weights);
+		}
 		if (activation_function_in == "relu") {
 			activation_function = [this](double input) {
 				return this->relu(input);
+				};
+			derivative_activation_function = [this](double input) {
+				return this->relu_derivative(input);
 				};
 		}
 		else if (activation_function_in == "tanh") {
@@ -47,7 +55,11 @@ public:
 				output_layer_functions.push_back([this](double input) {
 					return this->relu(input);
 					});
+				derivative_output_layer_functions.push_back([this](double input) {
+					return this->relu_derivative(input);
+					});
 			}
+			
 		}
 		else if (output_layer_functions_in == "sigmoid") {
 			for (int row = 0; row < output_parameters; row++) {
@@ -56,10 +68,20 @@ public:
 					});
 			}
 		}
+		else if (output_layer_functions_in == "tanh") {
+			for (int row = 0; row < output_parameters; row++) {
+				output_layer_functions.push_back([this](double input) {
+					return this->hypertan(input);
+					});
+				derivative_output_layer_functions.push_back([this](double input) {
+					return this->hypertan_derivative(input);
+					});
+			}
+		}
 	}
 
-	void evolution_train(int epoch_count, double diversity_rate, double decay_rate, VectorXd input_values, 
-		VectorXd expected_values, function<double(VectorXd, VectorXd)> cost_function) {
+	void evolution_train(int epoch_count, double diversity_rate, double decay_rate, MatrixXd input_values, 
+		MatrixXd expected_values, function<double(VectorXd, VectorXd)> cost_function) {
 		for (int epoch = 1; epoch <= epoch_count; epoch++) {
 			double parent_cost = evaluate_cost(evaluate_many(input_values), expected_values, cost_function);
 			vector<MatrixXd> parent_weight_matrices = weight_matrices;
@@ -79,62 +101,93 @@ public:
 		std::cout << "final model cost: " << evaluate_cost(evaluate_many(input_values), expected_values, cost_function) << std::endl;
 	}
 
-	void grad_descent_train(int epoch_count, double diversity_rate, double decay_rate, VectorXd input_values, 
-		VectorXd expected_values, function<double(VectorXd, VectorXd)> cost_function, function<VectorXd(VectorXd, VectorXd)> derivative_cost_function) {
-		for (int epoch = 1; epoch <= epoch_count; epoch++) {
-			MatrixXd activated_values = MatrixXd::Zero(neuron_count, layer_count);
-			MatrixXd pre_activated_values = MatrixXd::Zero(neuron_count, layer_count);
-			double cost = evaluate_cost(evaluate_save(input_values, activated_values, pre_activated_values), expected_values, cost_function);
-			VectorXd cost_derivative = derivative_cost_function(evaluate_many(input_values), expected_values);
-			activate_hidden_neurons_derivative(cost_derivative);
-			for (int layer = layer_count - 1; layer >= 0; layer--) {
-				MatrixXd gradient = cost_derivative * (activated_values.col(layer)).transpose();
+	void grad_descent_train(int epoch_count, double learning_rate, double decay_rate, MatrixXd input_values,
+		MatrixXd expected_values, function<double(VectorXd, VectorXd)> cost_function, function<VectorXd(VectorXd, VectorXd)> derivative_cost_function) {
+		vector<VectorXd> activated_values(layer_count + 1, VectorXd::Zero(neuron_count));
+		vector<VectorXd> pre_activated_values(layer_count, VectorXd::Zero(neuron_count));
+		activated_values[0] = VectorXd::Zero(input_parameters);
+		activated_values[layer_count] = VectorXd::Zero(output_parameters);
+		pre_activated_values[layer_count - 1] = VectorXd::Zero(output_parameters);
+		vector<MatrixXd> original_weight_matrices = weight_matrices;
 
+		auto follow_gradient = [&](VectorXd input, VectorXd expected) {
+			original_weight_matrices = weight_matrices;
+			activated_values[layer_count] = evaluate_save(input, activated_values, pre_activated_values);
+			VectorXd cost_derivative = derivative_cost_function(activated_values[layer_count], expected);
+			VectorXd layer_values = pre_activated_values[layer_count - 1];
+			activate_output_neurons_derivative(layer_values);
+			MatrixXd gradient = cost_derivative.array() * layer_values.array();
+			MatrixXd transpose = activated_values[layer_count - 1].matrix().transpose();
+			weight_matrices[layer_count - 1] -= (gradient * transpose) * learning_rate;
 
+			for (int layer = layer_count - 1; layer >= 1; layer--) {
+				layer_values = pre_activated_values[layer - 1];
+				activate_hidden_neurons_derivative(layer_values);
+				gradient = (original_weight_matrices[layer].transpose() * gradient).array() * layer_values.array();
+				weight_matrices[layer - 1] -= (gradient * activated_values[layer - 1].transpose()) * learning_rate;
 			}
 
+			return activated_values[layer_count];
+		};
+		for (int epoch = 1; epoch <= epoch_count; epoch++) {
+			double cost = evaluate_cost(evaluate_many(input_values), expected_values, cost_function);
+
+			for (int batch = 0; batch < input_values.rows(); batch++) {
+				
+				VectorXd output = follow_gradient(input_values.row(batch).transpose(), expected_values.row(batch).transpose());
+
+			}
+			double new_cost = evaluate_cost(evaluate_many(input_values), expected_values, cost_function);
+			if (new_cost < cost) {
+				std::cout << "Epoch: " << epoch << ", Cost improved from " << cost << " to " << new_cost << std::endl;
+			}
+			else {
+				std::cout << "Epoch: " << epoch << ", Cost did not improve" << std::endl;
+			}
 		}
 	}
 
-	double evaluate_cost(VectorXd input_values, VectorXd expected_values, function<double(VectorXd, VectorXd)> cost_function) {
+	double evaluate_cost(MatrixXd input_values, MatrixXd expected_values, function<double(VectorXd, VectorXd)> cost_function) {
 		double cost = 0;
-		for (int batch = 0; batch < input_values.rows() / output_parameters; batch++) {
-			int index = batch * output_parameters;
-			cost += cost_function(input_values(seqN(index, output_parameters)), expected_values(seqN(index, output_parameters)));
+		VectorXd input_vector = VectorXd::Zero(input_values.cols());
+		VectorXd expected_vector = VectorXd::Zero(expected_values.cols());
+		for (int batch = 0; batch < input_values.rows(); batch++) {
+			input_vector = input_values.row(batch);
+			expected_vector = expected_values.row(batch);
+			cost += cost_function(input_vector,expected_vector);
 		}
-		return cost;
+		return cost/input_values.rows();
 	}
 
 	VectorXd evaluate(VectorXd input) {
 		VectorXd layer_values = weight_matrices[0] * input;
 		
-		for (int layer = 1; layer <= layer_count; layer++) {
+		for (int layer = 1; layer < layer_count; layer++) {
 			activate_hidden_neurons(layer_values);
 			layer_values = weight_matrices[layer] * layer_values;
 		}
 		activate_output_neurons(layer_values);
 		return layer_values;
 	}
-	VectorXd evaluate_save(VectorXd input, MatrixXd &activated_values, MatrixXd & pre_activated_values) {
+	VectorXd evaluate_save(VectorXd input, vector<VectorXd>&activated_values, vector<VectorXd>& pre_activated_values) {
 		VectorXd layer_values = weight_matrices[0] * input;
-
-		for (int layer = 1; layer <= layer_count; layer++) {
-			pre_activated_values.col(layer - 1) = layer_values;
+		activated_values[0] = input;
+		for (int layer = 1; layer < layer_count; layer++) {
+			pre_activated_values[layer - 1] = layer_values;
 			activate_hidden_neurons(layer_values);
-			activated_values.col(layer - 1) = layer_values;
+			activated_values[layer] = layer_values;
 			layer_values = weight_matrices[layer] * layer_values;
 		}
-		pre_activated_values.col(layer_count-1) = layer_values;
+		pre_activated_values[layer_count - 1] = layer_values;
 		activate_output_neurons(layer_values);
-		activated_values.col(layer_count - 1) = layer_values;
 		return layer_values;
 	}
 
-	VectorXd evaluate_many(VectorXd input) {
-		VectorXd output = VectorXd::Zero(input.rows());
-		for (int batch = 0; batch < output.rows()/output_parameters; batch++) {
-			output(seqN(batch * output_parameters, output_parameters)) =
-				evaluate(input(seqN(batch * output_parameters, output_parameters)));
+	MatrixXd evaluate_many(MatrixXd input) {
+		MatrixXd output = MatrixXd::Zero(input.rows(),input.cols());
+		for (int batch = 0; batch < output.rows(); batch++) {
+			VectorXd input_vector = input.row(batch);
+			output(batch,seqN(0,output_parameters)) = evaluate(input_vector);
 		}
 		return output;
 	}
@@ -158,6 +211,12 @@ private:
 		}
 	}
 
+	void activate_output_neurons_derivative(VectorXd& input) {
+		for (int row = 0; row < input.rows(); row++) {
+			input(row) = derivative_output_layer_functions[row](input(row));
+		}
+	}
+
 	double relu(double in) {
 		if (in <= 0) {
 			return 0;
@@ -167,12 +226,25 @@ private:
 		}
 	}
 
+	double relu_derivative(double in) {
+		if (in <= 0) {
+			return 0;
+		}
+		else {
+			return 1;
+		}
+	}
+
 	double sigmoid(double in) {
 		return 1 / (1 + exp(-in));
 	}
 
 	double hypertan(double in) {
 		return tanh(in);
+	}
+
+	double hypertan_derivative(double in) {
+		return 1 - pow(tanh(in),2);
 	}
 
 
@@ -185,5 +257,6 @@ private:
 	function<double(double)> derivative_activation_function;
 	vector<MatrixXd> weight_matrices;
 	vector <function<double(double)>> output_layer_functions;
+	vector <function<double(double)>> derivative_output_layer_functions;
 
 };
