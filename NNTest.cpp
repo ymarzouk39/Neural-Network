@@ -5,14 +5,15 @@ MatrixXd read_samples(int sample_size, std::string file_path);
 void save_samples(VectorXd samples, std::string file_path);
 
 int main(int argc, char* argv) {
-	NeuralNetwork* net = new NeuralNetwork(1, 1, 1, 1, "relu", "relu");
 
-	//VectorXd time_span = VectorXd::LinSpaced(100, 0, 10);
-	VectorXd time_span = VectorXd::Zero(1);
-	time_span(0) = 5.0;
-	MatrixXd input_values = MatrixXd::Zero(1, 1);
+	NeuralNetwork* net = new NeuralNetwork(1, 1, 2, 2, "relu", "relu");
+
+	int batch_size = 100;
+
+	VectorXd time_span = VectorXd::LinSpaced(batch_size, 0, 10);
+	MatrixXd input_values = MatrixXd::Zero(batch_size, 1);
 	input_values.col(0) = time_span;
-	MatrixXd expected_values = read_samples(1, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\samples.txt");
+	MatrixXd expected_values = read_samples(batch_size, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\samples.txt");
 
 	function<double(VectorXd, VectorXd)> least_squares = [](VectorXd input, VectorXd expected) {
 		double cost = 0;
@@ -22,13 +23,13 @@ int main(int argc, char* argv) {
 		return cost;
 	};
 
-	function<VectorXd(VectorXd, VectorXd)> least_squares_derivative = [](VectorXd input, VectorXd expected) {
-		VectorXd result = input - expected;
+	function<MatrixXd(MatrixXd, MatrixXd)> least_squares_derivative = [](MatrixXd input, MatrixXd expected) {
+		MatrixXd result = input - expected.transpose();
 		return result;
 		};
 
 	//net->evolution_train(1000, 0.1, 1e-4, input_values, expected_values, least_squares);
-	net->grad_descent_train(100, 0.01, 1e-4, input_values, expected_values, least_squares,least_squares_derivative);
+	net->grad_descent_train(10, 10, 0.0001, 1e-4, input_values, expected_values, least_squares,least_squares_derivative);
 
 	MatrixXd output = net->evaluate_many(input_values);
 	save_samples(output, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\nn_samples.txt");

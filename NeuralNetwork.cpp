@@ -101,40 +101,48 @@ public:
 		std::cout << "final model cost: " << evaluate_cost(evaluate_many(input_values), expected_values, cost_function) << std::endl;
 	}
 
-	void grad_descent_train(int epoch_count, double learning_rate, double decay_rate, MatrixXd input_values,
-		MatrixXd expected_values, function<double(VectorXd, VectorXd)> cost_function, function<VectorXd(VectorXd, VectorXd)> derivative_cost_function) {
-		vector<VectorXd> activated_values(layer_count + 1, VectorXd::Zero(neuron_count));
-		vector<VectorXd> pre_activated_values(layer_count, VectorXd::Zero(neuron_count));
-		activated_values[0] = VectorXd::Zero(input_parameters);
-		activated_values[layer_count] = VectorXd::Zero(output_parameters);
-		pre_activated_values[layer_count - 1] = VectorXd::Zero(output_parameters);
+	void grad_descent_train(int epoch_count, int batch_size, double learning_rate, double decay_rate, MatrixXd input_values,
+		MatrixXd expected_values, function<double(VectorXd, VectorXd)> cost_function, function<MatrixXd(MatrixXd, MatrixXd)> derivative_cost_function) {
+		vector<MatrixXd> activated_values(layer_count + 1, MatrixXd::Zero(neuron_count, batch_size));
+		vector<MatrixXd> pre_activated_values(layer_count, MatrixXd::Zero(neuron_count, batch_size));
+		activated_values[0] = MatrixXd::Zero(input_parameters, batch_size);
+		activated_values[layer_count] = MatrixXd::Zero(output_parameters, batch_size);
+		pre_activated_values[layer_count - 1] = MatrixXd::Zero(output_parameters, batch_size);
 		vector<MatrixXd> original_weight_matrices = weight_matrices;
 
-		auto follow_gradient = [&](VectorXd input, VectorXd expected) {
+		auto follow_gradient = [&](MatrixXd input, MatrixXd expected) {
 			original_weight_matrices = weight_matrices;
 			activated_values[layer_count] = evaluate_save(input, activated_values, pre_activated_values);
-			VectorXd cost_derivative = derivative_cost_function(activated_values[layer_count], expected);
-			VectorXd layer_values = pre_activated_values[layer_count - 1];
+			MatrixXd cost_derivative = derivative_cost_function(activated_values[layer_count], expected);
+			MatrixXd layer_values = pre_activated_values[layer_count - 1];
 			activate_output_neurons_derivative(layer_values);
 			MatrixXd gradient = cost_derivative.array() * layer_values.array();
-			MatrixXd transpose = activated_values[layer_count - 1].matrix().transpose();
-			weight_matrices[layer_count - 1] -= (gradient * transpose) * learning_rate;
+			MatrixXd transpose = activated_values[layer_count - 1].transpose();
+			weight_matrices[layer_count - 1] -= (gradient * transpose) * learning_rate / batch_size;
 
 			for (int layer = layer_count - 1; layer >= 1; layer--) {
 				layer_values = pre_activated_values[layer - 1];
 				activate_hidden_neurons_derivative(layer_values);
 				gradient = (original_weight_matrices[layer].transpose() * gradient).array() * layer_values.array();
-				weight_matrices[layer - 1] -= (gradient * activated_values[layer - 1].transpose()) * learning_rate;
+				transpose = activated_values[layer - 1].transpose();
+				weight_matrices[layer - 1] -= (gradient * transpose) * learning_rate / batch_size;
 			}
 
 			return activated_values[layer_count];
 		};
-		for (int epoch = 1; epoch <= epoch_count; epoch++) {
-			double cost = evaluate_cost(evaluate_many(input_values), expected_values, cost_function);
 
-			for (int batch = 0; batch < input_values.rows(); batch++) {
-				
-				VectorXd output = follow_gradient(input_values.row(batch).transpose(), expected_values.row(batch).transpose());
+		double cost = evaluate_cost(evaluate_many(input_values), expected_values, cost_function);
+		std::cout << " Initial cost: " << cost << std::endl;
+		for (int epoch = 1; epoch <= epoch_count; epoch++) {
+			cost = evaluate_cost(evaluate_many(input_values), expected_values, cost_function);
+
+			learning_rate = learning_rate * exp(-(epoch - 1) * decay_rate);
+
+			for (int batch = 0; batch < input_values.rows()/ batch_size; batch++) {
+				MatrixXd input = input_values(seqN(batch * batch_size, batch_size), seqN(0, input_parameters));
+				MatrixXd expected = expected_values(seqN(batch * batch_size, batch_size), seqN(0, input_parameters));
+
+				MatrixXd output = follow_gradient(input, expected);
 
 			}
 			double new_cost = evaluate_cost(evaluate_many(input_values), expected_values, cost_function);
@@ -182,27 +190,46 @@ public:
 		activate_output_neurons(layer_values);
 		return layer_values;
 	}
+	//store values in a vector of matrices where each matrix contains the values of all neurons in a layer for all input samples
+	MatrixXd evaluate_save(MatrixXd input, vector<MatrixXd>& activated_values, vector<MatrixXd>& pre_activated_values) {
+		MatrixXd layer_values = weight_matrices[0] * input.transpose();
+		activated_values[0] = input.transpose();
+		for (int layer = 1; layer < layer_count; layer++) {
+			pre_activated_values[layer - 1] = layer_values;
+			activate_hidden_neurons(layer_values);
+			activated_values[layer] = layer_values;
+			layer_values = weight_matrices[layer] * layer_values;
+		}
+		pre_activated_values[layer_count - 1] = layer_values;
+		activate_output_neurons(layer_values);
+		return layer_values;
+	}
 
 	MatrixXd evaluate_many(MatrixXd input) {
-		MatrixXd output = MatrixXd::Zero(input.rows(),input.cols());
-		for (int batch = 0; batch < output.rows(); batch++) {
-			VectorXd input_vector = input.row(batch);
-			output(batch,seqN(0,output_parameters)) = evaluate(input_vector);
+		MatrixXd layer_values = weight_matrices[0] * input.transpose();
+
+		for (int layer = 1; layer < layer_count; layer++) {
+			activate_hidden_neurons(layer_values);
+			layer_values = weight_matrices[layer] * layer_values;
 		}
-		return output;
+		activate_output_neurons(layer_values);
+		return layer_values.transpose();
 	}
 
 private:
 
 	void activate_hidden_neurons(VectorXd &input) {
-		for (int row = 0; row < input.rows(); row++) {
-			input(row) = activation_function(input(row));
-		}
+		input.unaryExpr(activation_function);
 	}
+	void activate_hidden_neurons(MatrixXd& input) {
+		input.unaryExpr(activation_function);
+	}
+
 	void activate_hidden_neurons_derivative(VectorXd& input) {
-		for (int row = 0; row < input.rows(); row++) {
-			input(row) = derivative_activation_function(input(row));
-		}
+		input.unaryExpr(derivative_activation_function);
+	}
+	void activate_hidden_neurons_derivative(MatrixXd& input) {
+		input.unaryExpr(derivative_activation_function);
 	}
 
 	void activate_output_neurons(VectorXd &input) {
@@ -210,10 +237,20 @@ private:
 			input(row) = output_layer_functions[row](input(row));
 		}
 	}
+	void activate_output_neurons(MatrixXd& input) {
+		for (int row = 0; row < input.rows(); row++) {
+			input.row(row).unaryExpr(output_layer_functions[row]);
+		}
+	}
 
 	void activate_output_neurons_derivative(VectorXd& input) {
 		for (int row = 0; row < input.rows(); row++) {
 			input(row) = derivative_output_layer_functions[row](input(row));
+		}
+	}
+	void activate_output_neurons_derivative(MatrixXd& input) {
+		for (int row = 0; row < input.rows(); row++) {
+			input.row(row).unaryExpr(derivative_output_layer_functions[row]);
 		}
 	}
 
