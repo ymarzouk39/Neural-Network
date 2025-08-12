@@ -1,12 +1,15 @@
 #include <fstream>
+#include <algorithm>
+#include <random>
 #include "NeuralNetwork.cpp"
 
 MatrixXd read_samples(int sample_size, std::string file_path);
 void save_samples(VectorXd samples, std::string file_path);
+void shuffle_samples(MatrixXd& samples, MatrixXd& input);
 
 int main(int argc, char* argv) {
 
-	NeuralNetwork* net = new NeuralNetwork(1, 1, 1, 1, "relu", "relu");
+	NeuralNetwork* net = new NeuralNetwork(1, 1, 2, 2, "relu", "relu");
 
 	int batch_size = 100;
 
@@ -14,13 +17,14 @@ int main(int argc, char* argv) {
 	MatrixXd input_values = MatrixXd::Zero(batch_size, 1);
 	input_values.col(0) = time_span;
 	MatrixXd expected_values = read_samples(batch_size, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\samples.txt");
+	shuffle_samples(expected_values, input_values);
 
 	function<double(VectorXd, VectorXd)> least_squares = [](VectorXd input, VectorXd expected) {
 		double cost = 0;
 		for (int row = 0; row < input.rows(); row++) {
 			cost += 0.5 * pow(input(row) - expected(row), 2);
 		}
-		return cost;
+		return cost/input.rows();
 	};
 
 	function<MatrixXd(MatrixXd, MatrixXd)> least_squares_derivative = [](MatrixXd input, MatrixXd expected) {
@@ -29,7 +33,7 @@ int main(int argc, char* argv) {
 		};
 
 	//net->evolution_train(1000, 0.1, 1e-4, input_values, expected_values, least_squares);
-	net->grad_descent_train(50, 1, 0.001, 1e-4, input_values, expected_values, least_squares,least_squares_derivative);
+	net->grad_descent_train(50, 10, 0.001, 1e-3, input_values, expected_values, least_squares,least_squares_derivative);
 
 	MatrixXd output = net->evaluate_many(input_values);
 	save_samples(output, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\nn_samples.txt");
@@ -49,6 +53,19 @@ MatrixXd read_samples(int sample_size, std::string file_path) {
 		file >> samples(batch, 0);
 	}
 	return samples;
+}
+
+void shuffle_samples(MatrixXd& samples, MatrixXd& input) {
+	std::random_device rd; // Provides non-deterministic random numbers
+	std::mt19937 gen(rd());
+
+	MatrixXd combined(samples.rows(), samples.cols() + input.cols());
+	combined(seqN(0, samples.rows()), seqN(0, samples.cols())) = samples;
+	combined(seqN(0, input.rows()), seqN(samples.cols(), input.cols())) = input;
+	std::shuffle(combined.rowwise().begin(), combined.rowwise().end(), gen);
+
+	samples = combined(seqN(0, samples.rows()), seqN(0, samples.cols()));
+	input = combined(seqN(0, input.rows()), seqN(samples.cols(), input.cols()));
 }
 
 void save_samples(VectorXd samples, std::string file_path) {

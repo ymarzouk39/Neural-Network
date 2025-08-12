@@ -107,7 +107,7 @@ public:
 		std::cout << "final model cost: " << evaluate_cost(evaluate_many(input_values), expected_values, cost_function) << std::endl;
 	}
 
-	void grad_descent_train(int epoch_count, int batch_size, double learning_rate, double decay_rate, MatrixXd input_values,
+	void grad_descent_train(int epoch_count, int batch_size, double learning_rate_in, double decay_rate, MatrixXd input_values,
 		MatrixXd expected_values, function<double(VectorXd, VectorXd)> cost_function, function<MatrixXd(MatrixXd, MatrixXd)> derivative_cost_function) {
 		vector<MatrixXd> activated_values(layer_count + 1, MatrixXd::Zero(neuron_count, batch_size));
 		vector<MatrixXd> pre_activated_values(layer_count, MatrixXd::Zero(neuron_count, batch_size));
@@ -115,6 +115,7 @@ public:
 		activated_values[layer_count] = MatrixXd::Zero(output_parameters, batch_size);
 		pre_activated_values[layer_count - 1] = MatrixXd::Zero(output_parameters, batch_size);
 		vector<MatrixXd> original_weight_matrices = weight_matrices;
+		double learning_rate = 0;
 
 		auto follow_gradient = [&](MatrixXd input, MatrixXd expected) {
 			original_weight_matrices = weight_matrices;
@@ -144,7 +145,7 @@ public:
 		for (int epoch = 1; epoch <= epoch_count; epoch++) {
 			cost = evaluate_cost(evaluate_many(input_values), expected_values, cost_function);
 
-			learning_rate = learning_rate * exp(-(epoch - 1) * decay_rate);
+			learning_rate = learning_rate_in * exp(-(epoch - 1) * decay_rate);
 
 			for (int batch = 0; batch < input_values.rows()/ batch_size; batch++) {
 				MatrixXd input = input_values(seqN(batch * batch_size, batch_size), seqN(0, input_parameters));
@@ -231,17 +232,17 @@ public:
 private:
 
 	void activate_hidden_neurons(VectorXd &input) {
-		input.unaryExpr(activation_function);
+		input = input.unaryExpr(activation_function);
 	}
 	void activate_hidden_neurons(MatrixXd& input) {
-		input.unaryExpr(activation_function);
+		input = input.unaryExpr(activation_function);
 	}
 
 	void activate_hidden_neurons_derivative(VectorXd& input) {
-		input.unaryExpr(derivative_activation_function);
+		input = input.unaryExpr(derivative_activation_function);
 	}
 	void activate_hidden_neurons_derivative(MatrixXd& input) {
-		input.unaryExpr(derivative_activation_function);
+		input = input.unaryExpr(derivative_activation_function);
 	}
 
 	void activate_output_neurons(VectorXd &input) {
@@ -251,7 +252,7 @@ private:
 	}
 	void activate_output_neurons(MatrixXd& input) {
 		for (int row = 0; row < input.rows(); row++) {
-			input.row(row).unaryExpr(output_layer_functions[row]);
+			input.row(row) = input.row(row).unaryExpr(output_layer_functions[row]);
 		}
 	}
 
@@ -262,7 +263,7 @@ private:
 	}
 	void activate_output_neurons_derivative(MatrixXd& input) {
 		for (int row = 0; row < input.rows(); row++) {
-			input.row(row).unaryExpr(derivative_output_layer_functions[row]);
+			input.row(row) = input.row(row).unaryExpr(derivative_output_layer_functions[row]);
 		}
 	}
 
