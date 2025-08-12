@@ -6,7 +6,7 @@ void save_samples(VectorXd samples, std::string file_path);
 
 int main(int argc, char* argv) {
 
-	NeuralNetwork* net = new NeuralNetwork(1, 1, 2, 2, "relu", "relu");
+	NeuralNetwork* net = new NeuralNetwork(1, 1, 1, 1, "relu", "relu");
 
 	int batch_size = 100;
 
@@ -29,7 +29,7 @@ int main(int argc, char* argv) {
 		};
 
 	//net->evolution_train(1000, 0.1, 1e-4, input_values, expected_values, least_squares);
-	net->grad_descent_train(10, 10, 0.0001, 1e-4, input_values, expected_values, least_squares,least_squares_derivative);
+	net->grad_descent_train(50, 1, 0.001, 1e-4, input_values, expected_values, least_squares,least_squares_derivative);
 
 	MatrixXd output = net->evaluate_many(input_values);
 	save_samples(output, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\nn_samples.txt");

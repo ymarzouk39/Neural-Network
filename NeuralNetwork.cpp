@@ -32,6 +32,12 @@ public:
 			MatrixXd output_weights = MatrixXd::Constant(output_parameters, neuron_count, DEFAULT_WEIGHT);
 			weight_matrices.push_back(output_weights);
 		}
+		for (int layer = 0; layer < layer_count - 1; layer++) {
+			VectorXd bias = VectorXd::Constant(neuron_count, DEFAULT_BIAS);
+			biases.push_back(bias);
+		}
+		biases.push_back(VectorXd::Constant(output_parameters, DEFAULT_BIAS));
+
 		if (activation_function_in == "relu") {
 			activation_function = [this](double input) {
 				return this->relu(input);
@@ -119,6 +125,7 @@ public:
 			MatrixXd gradient = cost_derivative.array() * layer_values.array();
 			MatrixXd transpose = activated_values[layer_count - 1].transpose();
 			weight_matrices[layer_count - 1] -= (gradient * transpose) * learning_rate / batch_size;
+			biases[layer_count - 1] -= gradient.rowwise().sum() * learning_rate / batch_size;
 
 			for (int layer = layer_count - 1; layer >= 1; layer--) {
 				layer_values = pre_activated_values[layer - 1];
@@ -126,6 +133,7 @@ public:
 				gradient = (original_weight_matrices[layer].transpose() * gradient).array() * layer_values.array();
 				transpose = activated_values[layer - 1].transpose();
 				weight_matrices[layer - 1] -= (gradient * transpose) * learning_rate / batch_size;
+				biases[layer - 1] -= gradient.rowwise().sum() * learning_rate / batch_size;
 			}
 
 			return activated_values[layer_count];
@@ -168,23 +176,23 @@ public:
 	}
 
 	VectorXd evaluate(VectorXd input) {
-		VectorXd layer_values = weight_matrices[0] * input;
+		VectorXd layer_values = weight_matrices[0] * input + biases[0];
 		
 		for (int layer = 1; layer < layer_count; layer++) {
 			activate_hidden_neurons(layer_values);
-			layer_values = weight_matrices[layer] * layer_values;
+			layer_values = weight_matrices[layer] * layer_values + biases[layer];
 		}
 		activate_output_neurons(layer_values);
 		return layer_values;
 	}
 	VectorXd evaluate_save(VectorXd input, vector<VectorXd>&activated_values, vector<VectorXd>& pre_activated_values) {
-		VectorXd layer_values = weight_matrices[0] * input;
+		VectorXd layer_values = weight_matrices[0] * input + biases[0];
 		activated_values[0] = input;
 		for (int layer = 1; layer < layer_count; layer++) {
 			pre_activated_values[layer - 1] = layer_values;
 			activate_hidden_neurons(layer_values);
 			activated_values[layer] = layer_values;
-			layer_values = weight_matrices[layer] * layer_values;
+			layer_values = weight_matrices[layer] * layer_values + biases[layer];
 		}
 		pre_activated_values[layer_count - 1] = layer_values;
 		activate_output_neurons(layer_values);
@@ -193,12 +201,14 @@ public:
 	//store values in a vector of matrices where each matrix contains the values of all neurons in a layer for all input samples
 	MatrixXd evaluate_save(MatrixXd input, vector<MatrixXd>& activated_values, vector<MatrixXd>& pre_activated_values) {
 		MatrixXd layer_values = weight_matrices[0] * input.transpose();
+		layer_values.colwise() += biases[0];
 		activated_values[0] = input.transpose();
 		for (int layer = 1; layer < layer_count; layer++) {
 			pre_activated_values[layer - 1] = layer_values;
 			activate_hidden_neurons(layer_values);
 			activated_values[layer] = layer_values;
 			layer_values = weight_matrices[layer] * layer_values;
+			layer_values.colwise() += biases[layer];
 		}
 		pre_activated_values[layer_count - 1] = layer_values;
 		activate_output_neurons(layer_values);
@@ -207,10 +217,12 @@ public:
 
 	MatrixXd evaluate_many(MatrixXd input) {
 		MatrixXd layer_values = weight_matrices[0] * input.transpose();
+		layer_values.colwise() += biases[0];
 
 		for (int layer = 1; layer < layer_count; layer++) {
 			activate_hidden_neurons(layer_values);
 			layer_values = weight_matrices[layer] * layer_values;
+			layer_values.colwise() += biases[layer];
 		}
 		activate_output_neurons(layer_values);
 		return layer_values.transpose();
@@ -286,6 +298,7 @@ private:
 
 
 	const double DEFAULT_WEIGHT = 1;
+	const double DEFAULT_BIAS = 0;
 	int input_parameters;
 	int output_parameters;
 	int layer_count;
@@ -293,6 +306,7 @@ private:
 	function<double(double)> activation_function;
 	function<double(double)> derivative_activation_function;
 	vector<MatrixXd> weight_matrices;
+	vector<VectorXd> biases;
 	vector <function<double(double)>> output_layer_functions;
 	vector <function<double(double)>> derivative_output_layer_functions;
 

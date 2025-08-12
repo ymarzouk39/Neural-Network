@@ -17,7 +17,7 @@ int main(int argc, char* argv) {
 }
 
 double function(double x) {
-	return 2 * x; // Example function
+	return 2 * x + 4; // Example function
 }
 
 VectorXd generate_samples(int batch_size, double start_time, double end_time) {
