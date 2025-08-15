@@ -9,22 +9,23 @@ void shuffle_samples(MatrixXd& samples, MatrixXd& input);
 
 int main(int argc, char* argv) {
 
-	NeuralNetwork* net = new NeuralNetwork(1, 1, 2, 2, "relu", "relu");
+	NeuralNetwork* net = new NeuralNetwork(1, 1, 3, 50, "tanh", "linear");
 
-	int batch_size = 100;
+	int batch_size = 200;
+	double start_time = -1;
+	double end_time = 2;
 
-	VectorXd time_span = VectorXd::LinSpaced(batch_size, 0, 10);
+	VectorXd time_span = VectorXd::LinSpaced(batch_size, start_time, end_time);
 	MatrixXd input_values = MatrixXd::Zero(batch_size, 1);
 	input_values.col(0) = time_span;
+	MatrixXd eval_samples = input_values;
 	MatrixXd expected_values = read_samples(batch_size, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\samples.txt");
 	shuffle_samples(expected_values, input_values);
 
 	function<double(VectorXd, VectorXd)> least_squares = [](VectorXd input, VectorXd expected) {
-		double cost = 0;
-		for (int row = 0; row < input.rows(); row++) {
-			cost += 0.5 * pow(input(row) - expected(row), 2);
-		}
-		return cost/input.rows();
+			
+		double cost = 0.5 * (input - expected).squaredNorm();
+		return cost;
 	};
 
 	function<MatrixXd(MatrixXd, MatrixXd)> least_squares_derivative = [](MatrixXd input, MatrixXd expected) {
@@ -33,9 +34,10 @@ int main(int argc, char* argv) {
 		};
 
 	//net->evolution_train(1000, 0.1, 1e-4, input_values, expected_values, least_squares);
-	net->grad_descent_train(50, 10, 0.001, 1e-3, input_values, expected_values, least_squares,least_squares_derivative);
 
-	MatrixXd output = net->evaluate_many(input_values);
+	net->grad_descent_train("RMSProp", 250, 1, 0.0002, 0.8, input_values, expected_values, least_squares,least_squares_derivative);
+
+	MatrixXd output = net->evaluate_many(eval_samples);
 	save_samples(output, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\nn_samples.txt");
 	delete net;
 }
