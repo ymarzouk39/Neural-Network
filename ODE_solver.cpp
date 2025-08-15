@@ -4,15 +4,15 @@
 #include <functional>
 #include <Eigen/Eigen>
 
-using Eigen::VectorXd, Eigen::seqN, std::function;
+using Eigen::VectorXd, Eigen::MatrixXd, Eigen::seqN, std::function;
 
-VectorXd solve_ode_euler(VectorXd initial_conditions, int input_parameters, int batch_size,
+MatrixXd solve_ode_euler(VectorXd initial_conditions, int batch_size,
 	double end_time, function<VectorXd(double time, VectorXd)>ODE);
 
-VectorXd solve_ode_rk4(VectorXd initial_conditions, int input_parameters, int batch_size,
+MatrixXd solve_ode_rk4(VectorXd initial_conditions, int batch_size,
 	double end_time, function<VectorXd(double time, VectorXd)>ODE);
 
-void save_samples(VectorXd samples, std::string file_path);
+void save_samples(MatrixXd samples, std::string file_path);
 
 int main(int argc, char* argv) {
 	function<VectorXd(double, VectorXd)> simple_pendulum = [](double time, VectorXd y) {
@@ -35,55 +35,55 @@ int main(int argc, char* argv) {
 	int input_parameters = static_cast<int>(initial_conditions.rows());
 	int batch_size = 1000; // Number of time steps
 	double end_time = 10.0; // Total time for the simulation
-	VectorXd samples = solve_ode_rk4(initial_conditions, input_parameters, batch_size, end_time, simple_pendulum);
-	save_samples(samples, "C:\\Users\\Yousef Marzouk\\Documents\\MATLAB\\ode_samples_pendulum.txt");
+	MatrixXd samples = solve_ode_rk4(initial_conditions, batch_size, end_time, simple_pendulum);
+	save_samples(samples, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\ode_samples.txt");
 }
 
-VectorXd solve_ode_euler(VectorXd initial_conditions, int input_parameters, int batch_size, 
+MatrixXd solve_ode_euler(VectorXd initial_conditions, int batch_size,
 	double end_time, function<VectorXd(double time,VectorXd)>ODE) {
 	double time = 0;
 	double dt = end_time / batch_size;
-	VectorXd samples = VectorXd::Zero(batch_size * input_parameters);
-	samples.segment(0, input_parameters) = initial_conditions;
+	MatrixXd samples = MatrixXd::Zero(batch_size, initial_conditions.size());
+	samples(0,seqN(0,initial_conditions.size())) = initial_conditions;
 	for (int batch = 1; batch < batch_size; batch++) {
 		time += dt;
-		int batch_start = batch * input_parameters;
-		VectorXd previous_conditions = samples(seqN(batch_start - input_parameters, input_parameters));
-		samples(seqN(batch_start, input_parameters)) = 
-			previous_conditions + ODE(time, previous_conditions)*dt;
+		VectorXd previous_conditions = samples(batch - 1, seqN(0, initial_conditions.size()));
+		samples(batch, seqN(0, initial_conditions.size())) = previous_conditions + ODE(time, previous_conditions)*dt;
 	}
 	return samples;
 }
 
-VectorXd solve_ode_rk4(VectorXd initial_conditions, int input_parameters, int batch_size,
+MatrixXd solve_ode_rk4(VectorXd initial_conditions, int batch_size,
 	double end_time, function<VectorXd(double time, VectorXd)>ODE) {
 	double time = 0;
 	double dt = end_time / batch_size;
-	VectorXd samples = VectorXd::Zero(batch_size * input_parameters);
-	samples.segment(0, input_parameters) = initial_conditions;
+	MatrixXd samples = MatrixXd::Zero(batch_size, initial_conditions.size());
+	samples(0, seqN(0, initial_conditions.size())) = initial_conditions;
 	for (int batch = 1; batch < batch_size; batch++) {
 		time += dt;
-		int batch_start = batch * input_parameters;
 		double half_step = 0.5 * dt;
-		VectorXd previous_conditions = samples(seqN(batch_start - input_parameters, input_parameters));
+		VectorXd previous_conditions = samples(batch - 1, seqN(0,initial_conditions.size()));
 		VectorXd k1 = ODE(time, previous_conditions);
 		VectorXd k2 = ODE(time + half_step, previous_conditions + 0.5 * k1 * dt);
 		VectorXd k3 = ODE(time + half_step, previous_conditions + 0.5 * k2 * dt);
 		VectorXd k4 = ODE(time + dt, previous_conditions + dt*k3);
-		samples(seqN(batch_start, input_parameters)) = 
+		samples(batch, seqN(0, initial_conditions.size())) =
 			previous_conditions + (k1 + 2 * k2 + 2 * k3 + k4) * (dt / 6.0);
 	}
 	return samples;
 }
 
-void save_samples(VectorXd samples, std::string file_path) {
+void save_samples(MatrixXd samples, std::string file_path) {
 	std::ofstream file(file_path);
 	if (!file.is_open()) {
 		std::cerr << "Error opening file: " << file_path << std::endl;
 	}
 	else {
 		for (int line = 0; line < samples.rows() - 1; line++) {
-			file << samples(line);
+			for (int col = 0; col < samples.cols() - 1; col++) {
+				file << samples(line, col) << ",";
+			}
+			file << samples(line, samples.cols() - 1);
 			file << "\n";
 		}
 		file << samples(samples.rows() - 1);

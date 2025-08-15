@@ -101,7 +101,7 @@ else if (output_layer_functions_in == "tanh") {
 		std::cout << "final model cost: " << evaluate_cost(evaluate_many(input_values), expected_values, cost_function) << std::endl;
 	}
 
-	void grad_descent_train(std::string optimizer, int epoch_count, int batch_size, double learning_rate_in, double decay_rate_in, MatrixXd input_values,
+	void grad_descent_train(std::string optimizer, int epoch_count, int batch_size, double learning_rate_in, double decay_rate_1, double decay_rate_2, double weight_decay, MatrixXd input_values,
 		MatrixXd expected_values, function<double(VectorXd, VectorXd)> cost_function, function<MatrixXd(MatrixXd, MatrixXd)> derivative_cost_function) {
 		//Variable initializations
 		vector<MatrixXd> activated_values(layer_count + 1, MatrixXd::Zero(neuron_count, batch_size));
@@ -113,8 +113,8 @@ else if (output_layer_functions_in == "tanh") {
 		MatrixXd gradient;
 		MatrixXd bias_gradient;
 		double learning_rate = learning_rate_in;
-		double decay_rate = decay_rate_in;
 		double epsilon = 1e-8;
+		int time_step = 1;
 		function<void(int)> optimizer_function;
 		vector<MatrixXd> first_moment_weights;
 		vector<MatrixXd> first_moment_biases;
@@ -123,12 +123,20 @@ else if (output_layer_functions_in == "tanh") {
 
 		//lambdas for different optimizers
 		auto generic_descent = [&](int layer){
-			this->generic_descent(weight_matrices, gradient, layer, batch_size, learning_rate);
-			this->generic_descent(biases, bias_gradient, layer, batch_size, learning_rate);
+			this->generic_descent(weight_matrices, gradient, layer, learning_rate);
+			this->generic_descent(biases, bias_gradient, layer, learning_rate);
 			};
 		auto RMSProp = [&](int layer) {
-			this->RMSProp(weight_matrices, gradient, second_moment_weights, decay_rate, epsilon, layer, batch_size, learning_rate);
-			this->RMSProp(biases, bias_gradient, second_moment_biases, decay_rate, epsilon, layer, batch_size, learning_rate);
+			this->RMSProp(weight_matrices, gradient, second_moment_weights, decay_rate_1, epsilon, layer, learning_rate);
+			this->RMSProp(biases, bias_gradient, second_moment_biases, decay_rate_1, epsilon, layer, learning_rate);
+			};
+		auto Adam = [&](int layer) {
+			this->Adam(weight_matrices, gradient, first_moment_weights, second_moment_weights, decay_rate_1, decay_rate_2, epsilon, layer, learning_rate, time_step);
+			this->Adam(biases, bias_gradient, first_moment_biases, second_moment_biases, decay_rate_1, decay_rate_2, epsilon, layer, learning_rate, time_step);
+			};
+		auto AdamW = [&](int layer) {
+			this->AdamW(weight_matrices, gradient, first_moment_weights, second_moment_weights, decay_rate_1, decay_rate_2, epsilon, layer, learning_rate, time_step, weight_decay);
+			this->Adam(biases, bias_gradient, first_moment_biases, second_moment_biases, decay_rate_1, decay_rate_2, epsilon, layer, learning_rate, time_step);
 			};
 
 		//Assign optimizer function and Initialize optimizer variables
@@ -142,6 +150,20 @@ else if (output_layer_functions_in == "tanh") {
 			initialize_zero_weight_matrices(initialize_weights);
 			initialize_zero_biases(initialize_bias);
 		}
+		else if (optimizer == "Adam") {
+			optimizer_function = Adam;
+			vector<vector<MatrixXd>*> initialize_weights = { &first_moment_weights, &second_moment_weights };
+			vector<vector<MatrixXd>*> initialize_bias = { &first_moment_biases, &second_moment_biases };
+			initialize_zero_weight_matrices(initialize_weights);
+			initialize_zero_biases(initialize_bias);
+		}
+		else if (optimizer == "AdamW") {
+			optimizer_function = AdamW;
+			vector<vector<MatrixXd>*> initialize_weights = { &first_moment_weights, &second_moment_weights };
+			vector<vector<MatrixXd>*> initialize_bias = { &first_moment_biases, &second_moment_biases };
+			initialize_zero_weight_matrices(initialize_weights);
+			initialize_zero_biases(initialize_bias);
+		}
 
 		//gradient descent lambda
 		auto follow_gradient = [&](MatrixXd input, MatrixXd expected) {
@@ -152,8 +174,8 @@ else if (output_layer_functions_in == "tanh") {
 			activate_output_neurons_derivative(layer_values);
 			MatrixXd loss = cost_derivative.array() * layer_values.array();
 			MatrixXd transpose = activated_values[layer_count - 1].transpose();
-			gradient = loss * transpose;
-			bias_gradient = loss.rowwise().sum();
+			gradient = loss * transpose / batch_size;
+			bias_gradient = loss.rowwise().sum() / batch_size;
 			clip_gradient(gradient, 100);
 			optimizer_function(layer_count);
 
@@ -162,13 +184,13 @@ else if (output_layer_functions_in == "tanh") {
 				activate_hidden_neurons_derivative(layer_values);
 				loss = (original_weight_matrices[layer].transpose() * loss).array() * layer_values.array();
 				transpose = activated_values[layer - 1].transpose();
-				gradient = loss * transpose;
-				bias_gradient = loss.rowwise().sum();
+				gradient = loss * transpose / batch_size;
+				bias_gradient = loss.rowwise().sum() / batch_size;
 				clip_gradient(gradient, 100);
 				optimizer_function(layer);
 
 			}
-
+			time_step++;
 			return activated_values[layer_count];
 		};
 
@@ -328,19 +350,33 @@ private:
 	}
 
 	template<typename MatrixType>
-	void generic_descent(vector<MatrixType>& parameter, MatrixXd& gradient, int layer, int batch_size, double learning_rate) {
-		parameter[layer - 1] -= (gradient)*learning_rate / batch_size;
+	void generic_descent(vector<MatrixType>& parameter, MatrixXd& gradient, int layer, double learning_rate) {
+		parameter[layer - 1] -= (gradient)*learning_rate;
 	}
 
 	template<typename MatrixType>
 	void RMSProp(vector<MatrixType>& parameter, MatrixXd& gradient, vector<MatrixXd>& running_average, double decay_rate, double epsilon, int layer,
-			int batch_size, double learning_rate) {
+			double learning_rate) {
 		running_average[layer - 1] = decay_rate * running_average[layer - 1] + (1 - decay_rate) * gradient.array().square().matrix();
-		parameter[layer - 1] -= learning_rate * (gradient.array() / (running_average[layer - 1].array() + epsilon).sqrt()).matrix() / batch_size;
+		parameter[layer - 1] -= learning_rate * (gradient.array() / (running_average[layer - 1].array().sqrt() + epsilon)).matrix();
 	}
-
-	void Adam(vector<MatrixXd>& parameter, MatrixXd& gradient, vector<MatrixXd>& first_moment, vector<MatrixXd>& second_moment,
-		double decay_rate_1, double decay_rate_2, double epsilon, int layer, int batch_size, double learning_rate) {
+	template<typename MatrixType>
+	void Adam(vector<MatrixType>& parameter, MatrixXd& gradient, vector<MatrixXd>& first_moment, vector<MatrixXd>& second_moment,
+		double decay_rate_1, double decay_rate_2, double epsilon, int layer, double learning_rate, int time_step) {
+		first_moment[layer - 1] = decay_rate_1 * first_moment[layer - 1].array() + (1 - decay_rate_1) * gradient.array();
+		second_moment[layer - 1] = decay_rate_2 * second_moment[layer - 1].array() + (1 - decay_rate_2) * gradient.array().square();
+		MatrixXd corrected_first_moment = first_moment[layer - 1] / (1 - pow(decay_rate_1, time_step));
+		MatrixXd corrected_second_moment = second_moment[layer - 1] / (1 - pow(decay_rate_2, time_step));
+		parameter[layer - 1] -= learning_rate * (corrected_first_moment.array() / (corrected_second_moment.array().sqrt() + epsilon)).matrix();
+	}
+	template<typename MatrixType>
+	void AdamW(vector<MatrixType>& parameter, MatrixXd& gradient, vector<MatrixXd>& first_moment, vector<MatrixXd>& second_moment,
+		double decay_rate_1, double decay_rate_2, double epsilon, int layer, double learning_rate, int time_step, double weight_decay) {
+		first_moment[layer - 1] = decay_rate_1 * first_moment[layer - 1].array() + (1 - decay_rate_1) * gradient.array();
+		second_moment[layer - 1] = decay_rate_2 * second_moment[layer - 1].array() + (1 - decay_rate_2) * gradient.array().square();
+		MatrixXd corrected_first_moment = first_moment[layer - 1] / (1 - pow(decay_rate_1, time_step));
+		MatrixXd corrected_second_moment = second_moment[layer - 1] / (1 - pow(decay_rate_2, time_step));
+		parameter[layer - 1] = (1 - learning_rate * weight_decay) * parameter[layer - 1] - learning_rate * (corrected_first_moment.array() / (corrected_second_moment.array().sqrt() + epsilon)).matrix();
 	}
 
 	void activate_hidden_neurons(VectorXd &input) {
