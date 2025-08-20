@@ -34,7 +34,7 @@ int main(int argc, char* argv) {
 
 	int input_parameters = static_cast<int>(initial_conditions.rows());
 	int batch_size = 1000; // Number of time steps
-	double end_time = 10.0; // Total time for the simulation
+	double end_time = 5; // Total time for the simulation
 	MatrixXd samples = solve_ode_rk4(initial_conditions, batch_size, end_time, simple_pendulum);
 	save_samples(samples, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\ode_samples.txt");
 }
@@ -86,7 +86,10 @@ void save_samples(MatrixXd samples, std::string file_path) {
 			file << samples(line, samples.cols() - 1);
 			file << "\n";
 		}
-		file << samples(samples.rows() - 1);
+		for (int col = 0; col < samples.cols() - 1; col++) {
+			file << samples(samples.rows() - 1, col) << ",";
+		}
+		file << samples(samples.rows() - 1, samples.cols() - 1);
 		std::cout << "Samples saved to " << file_path << std::endl;
 	}
 }

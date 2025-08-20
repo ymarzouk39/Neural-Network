@@ -1,26 +1,38 @@
 #include <fstream>
 #include <algorithm>
 #include <random>
+#include <Eigen/Eigen>
 #include "NeuralNetwork.cpp"
 
-MatrixXd read_csv(int sample_size, std::string file_path);
-void save_samples(VectorXd samples, std::string file_path);
+using Eigen::MatrixXd, Eigen::VectorXd, std::function, std::vector,
+Eigen::seqN;
+
+MatrixXd read_csv(int sample_size, int input_parameters, std::string file_path);
+void save_samples(MatrixXd samples, std::string file_path);
 void shuffle_samples(MatrixXd& samples, MatrixXd& input);
 
 int main(int argc, char* argv) {
 
-	NeuralNetwork* net = new NeuralNetwork(1, 1, 3, 20, "tanh", "linear");
+	
+
+	int input_parameters = 1;
+	int output_parameters = 2;
+	int layer_count = 3;
+	int neuron_count = 200;
 
 	int batch_size = 1000;
 	double start_time = 0;
-	double end_time = 10;
+	double end_time = 5;
+	
+	NeuralNetwork* net = new NeuralNetwork(input_parameters, output_parameters, layer_count, neuron_count, "tanh", "linear");
+
 
 	VectorXd time_span = VectorXd::LinSpaced(batch_size, start_time, end_time);
 	MatrixXd input_values = MatrixXd::Zero(batch_size, 1);
 	input_values.col(0) = time_span;
 	MatrixXd eval_samples = input_values;
-	MatrixXd expected_values = read_csv(batch_size, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\ode_samples.txt");
-	//shuffle_samples(expected_values, input_values);
+	MatrixXd expected_values = read_csv(batch_size, output_parameters, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\ode_samples.txt");
+	shuffle_samples(expected_values, input_values);
 
 	function<double(VectorXd, VectorXd)> least_squares = [](VectorXd input, VectorXd expected) {
 
@@ -35,14 +47,14 @@ int main(int argc, char* argv) {
 
 	//net->evolution_train(1000, 0.1, 1e-4, input_values, expected_values, least_squares);
 
-	net->grad_descent_train("AdamW", 500, 2, 0.0002, 0.9, 0.999, 1e-4, input_values, expected_values, least_squares, least_squares_derivative);
+	net->grad_descent_train("AdamW", 200, 1000, 0.0001, 0.9, 0.99, 1e-4, input_values, expected_values, least_squares, least_squares_derivative);
 
 	MatrixXd output = net->evaluate_many(eval_samples);
 	save_samples(output, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\nn_samples.txt");
 	delete net;
 }
 
-MatrixXd read_csv(int sample_size, std::string file_path) {
+MatrixXd read_csv(int sample_size, int input_parameters, std::string file_path) {
 	std::ifstream file(file_path);
 
 	if (!file.is_open()) {
@@ -50,9 +62,15 @@ MatrixXd read_csv(int sample_size, std::string file_path) {
 		return MatrixXd();
 	}
 
-	MatrixXd samples = MatrixXd::Zero(sample_size, 1);
+	MatrixXd samples = MatrixXd::Zero(sample_size, input_parameters);
+	std::string line;
 	for (int batch = 0; batch < sample_size; batch++) {
-		file >> samples(batch, 0);
+		for (int col = 0; col < input_parameters - 1; col++) {
+			std::getline(file,line,',');
+			samples(batch, col) = std::stod(line);
+		}
+		std::getline(file, line, '\n');
+		samples(batch, input_parameters - 1) = std::stod(line);
 	}
 	return samples;
 }
@@ -70,17 +88,23 @@ void shuffle_samples(MatrixXd& samples, MatrixXd& input) {
 	input = combined(seqN(0, input.rows()), seqN(samples.cols(), input.cols()));
 }
 
-void save_samples(VectorXd samples, std::string file_path) {
+void save_samples(MatrixXd samples, std::string file_path) {
 	std::ofstream file(file_path);
 	if (!file.is_open()) {
 		std::cerr << "Error opening file: " << file_path << std::endl;
 	}
 	else {
 		for (int line = 0; line < samples.rows() - 1; line++) {
-			file << samples(line);
+			for (int col = 0; col < samples.cols() - 1; col++) {
+				file << samples(line, col) << ",";
+			}
+			file << samples(line, samples.cols() - 1);
 			file << "\n";
 		}
-		file << samples(samples.rows() - 1);
+		for (int col = 0; col < samples.cols() - 1; col++) {
+			file << samples(samples.rows() - 1, col) << ",";
+		}
+		file << samples(samples.rows() - 1, samples.cols() - 1);
 		std::cout << "Samples saved to " << file_path << std::endl;
 	}
 }
