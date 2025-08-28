@@ -1,16 +1,18 @@
 #include <string>
+#include <arrayfire.h>
+#undef max
+#undef min
 #include <vector>
 #include <iostream>
 #include <iomanip>
 #include <functional>
-#include <arrayfire.h>
-
 
 using std::function, std::vector, af::array;
 using af::constant, af::randu;
-using af::sum, af::pow, af::max, af::sqrt, af::max;
+using af::sum, af::pow, af::sqrt;
 using af::transpose, af::matmul, af:: seq, af::span;
-using af::select;
+using af::select, af::root;
+
 
 class NeuralNetwork {
 public:
@@ -192,6 +194,8 @@ else if (output_layer_functions_in == "tanh") {
 			transpose = af::transpose(activated_values[layer_count - 1]);
 			gradient = matmul(loss, transpose) / batch_size;
 			bias_gradient = sum(loss, 1) / batch_size;
+			gradient.eval();
+			bias_gradient.eval();
 			//clip_gradient(gradient, 100);
 			optimizer_function(layer_count);
 
@@ -202,10 +206,14 @@ else if (output_layer_functions_in == "tanh") {
 				transpose = af::transpose(activated_values[layer - 1]);
 				gradient = matmul(loss, transpose) / batch_size;
 				bias_gradient = sum(loss, 1) / batch_size;
+				gradient.eval();
+				bias_gradient.eval();
 				//clip_gradient(gradient, 100);
 				optimizer_function(layer);
 
 			}
+			af::sync();
+
 			time_step++;
 			return activated_values[layer_count];
 		};
@@ -222,9 +230,9 @@ else if (output_layer_functions_in == "tanh") {
 
 				array output = follow_gradient(input, expected);
 			}
-			if (epoch % 1 == 0) {
+			if (epoch % 2 == 0) {
 				cost = evaluate_cost(evaluate_many(input_values), expected_values, cost_function);
-				std::cout << "Epoch: " << epoch << "(" << std::setprecision(3) << static_cast<float>(epoch)/(epoch_count) * 100 << "%), Current cost: " << std::setprecision(4) << cost << std::endl;
+				std::cout << "Epoch: " << epoch << "(" << std::setprecision(3) << static_cast<float>(epoch)/(epoch_count) * 100 << "%), Current cost: " << std::setprecision(6) << cost << std::endl;
 			}
 		}
 	}
@@ -359,7 +367,7 @@ private:
 
 
 	void clip_gradient(array& gradient, double max) { 
-		double norm = sum(pow(gradient, 2)).scalar<double>();
+		double norm = root(2, sum(pow(gradient, 2))).scalar<double>();
 		if (norm > max) {
 			gradient = gradient * max / norm;
 		}
@@ -373,26 +381,30 @@ private:
 	template<typename MatrixType>
 	void RMSProp(vector<MatrixType>& parameter, array& gradient, vector<array>& running_average, double decay_rate, double epsilon, int layer,
 			double learning_rate) {
-		/*running_average[layer - 1] = decay_rate * running_average[layer - 1] + (1 - decay_rate) * gradient.array().square().matrix();
-		parameter[layer - 1] -= learning_rate * (gradient.array() / (running_average[layer - 1].array().sqrt() + epsilon)).matrix();*/
+		running_average[layer - 1] = decay_rate * running_average[layer - 1] + (1 - decay_rate) * pow(gradient,2);
+		running_average[layer - 1].eval();
+		parameter[layer - 1] -= learning_rate * (gradient / (af::sqrt(running_average[layer - 1]) + epsilon));
+		parameter[layer - 1].eval();
 	}
 	template<typename MatrixType>
 	void Adam(vector<MatrixType>& parameter, array& gradient, vector<array>& first_moment, vector<array>& second_moment,
 		double decay_rate_1, double decay_rate_2, double epsilon, int layer, double learning_rate, int time_step) {
-		/*first_moment[layer - 1] = decay_rate_1 * first_moment[layer - 1].array() + (1 - decay_rate_1) * gradient.array();
-		second_moment[layer - 1] = decay_rate_2 * second_moment[layer - 1].array() + (1 - decay_rate_2) * gradient.array().square();
+		first_moment[layer - 1] = decay_rate_1 * first_moment[layer - 1] + (1 - decay_rate_1) * gradient;
+		second_moment[layer - 1] = decay_rate_2 * second_moment[layer - 1] + (1 - decay_rate_2) * pow(gradient, 2);
 		array corrected_first_moment = first_moment[layer - 1] / (1 - pow(decay_rate_1, time_step));
 		array corrected_second_moment = second_moment[layer - 1] / (1 - pow(decay_rate_2, time_step));
-		parameter[layer - 1] -= learning_rate * (corrected_first_moment.array() / (corrected_second_moment.array().sqrt() + epsilon)).matrix();*/
+		parameter[layer - 1] -= learning_rate * (corrected_first_moment / (sqrt(corrected_second_moment) + epsilon));
+		parameter[layer - 1].eval();
 	}
 	template<typename MatrixType>
 	void AdamW(vector<MatrixType>& parameter, array& gradient, vector<array>& first_moment, vector<array>& second_moment,
 		double decay_rate_1, double decay_rate_2, double epsilon, int layer, double learning_rate, int time_step, double weight_decay) {
-		/*first_moment[layer - 1] = decay_rate_1 * first_moment[layer - 1].array() + (1 - decay_rate_1) * gradient.array();
-		second_moment[layer - 1] = decay_rate_2 * second_moment[layer - 1].array() + (1 - decay_rate_2) * gradient.array().square();
+		first_moment[layer - 1] = decay_rate_1 * first_moment[layer - 1] + (1 - decay_rate_1) * gradient;
+		second_moment[layer - 1] = decay_rate_2 * second_moment[layer - 1] + (1 - decay_rate_2) * pow(gradient, 2);
 		array corrected_first_moment = first_moment[layer - 1] / (1 - pow(decay_rate_1, time_step));
 		array corrected_second_moment = second_moment[layer - 1] / (1 - pow(decay_rate_2, time_step));
-		parameter[layer - 1] = (1 - learning_rate * weight_decay) * parameter[layer - 1] - learning_rate * (corrected_first_moment.array() / (corrected_second_moment.array().sqrt() + epsilon)).matrix();*/
+		parameter[layer - 1] = (1 - learning_rate * weight_decay) * parameter[layer - 1] - learning_rate * (corrected_first_moment / sqrt(corrected_second_moment) + epsilon);
+		parameter[layer - 1].eval();
 	}
 
 	void activate_hidden_neurons(array &input) {

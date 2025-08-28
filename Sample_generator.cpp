@@ -10,17 +10,18 @@ VectorXd generate_samples(int batch_size, double start_time, double end_time);
 void save_samples(VectorXd samples, std::string file_path);
 
 int main(int argc, char* argv) {
-	int batch_size = 1000; // Number of samples to generate
-	double start_time = 0;
-	double end_time = 10;
+	int batch_size = 200; // Number of samples to generate
+	double start_time = -0.5;
+	double end_time = 1.5;
 	VectorXd samples = VectorXd::Zero(batch_size);
 	samples = generate_samples(batch_size, start_time, end_time); // Generate samples from 0 to 10
-	save_samples(samples, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\samples.txt");
+	save_samples(samples, "C:\\Users\\Yousef Marzouk\\Documents\\MATLAB\\samples.txt");
 }
 
 double function(double x) {
-	return pow(x, 3) - 2 * pow(x, 2) + x + 1; // Example function
-	// return pow(x,5) - 3 * pow(x, 4) + 2 * pow(x,3) - 0.4 * pow(x,2) - x + 2; // Example function
+	return pow(x, 2) - 0.5 * x + 1;
+	//return pow(x, 3) - 2 * pow(x, 2) + x + 1; // Example function
+	//return pow(x,5) - 3 * pow(x, 4) + 2 * pow(x,3) - 0.4 * pow(x,2) - x + 2; // Example function
 }
 
 VectorXd generate_samples(int batch_size, double start_time, double end_time) {

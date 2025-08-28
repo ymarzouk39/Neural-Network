@@ -1,11 +1,11 @@
 #include <fstream>
 #include <algorithm>
 #include <random>
-#include <Eigen/Eigen>
+#include <chrono>
 #include "NeuralNetwork.cpp"
+#include <Eigen/Eigen>
 
-using Eigen::MatrixXd, Eigen::VectorXd, std::function, std::vector,
-Eigen::seqN;
+using Eigen::MatrixXd, Eigen::seqN;
 
 MatrixXd read_csv(int sample_size, int input_parameters, std::string file_path);
 void save_samples(MatrixXd samples, std::string file_path);
@@ -13,44 +13,55 @@ void shuffle_samples(MatrixXd& samples, MatrixXd& input);
 
 int main(int argc, char* argv) {
 
-	
+	af::setBackend(AF_BACKEND_OPENCL);
+	af::setDevice(1);
+	af::info();
 
-	int input_parameters = 1;
+
+	int input_parameters = 2;
 	int output_parameters = 2;
-	int layer_count = 3;
-	int neuron_count = 200;
+	int layer_count = 2;
+	int neuron_count = 220;
 
-	int batch_size = 1000;
+	int batch_size = 501;
 	double start_time = 0;
-	double end_time = 5;
-	
+	double end_time = 10;
+
+	auto start = std::chrono::high_resolution_clock::now();
 	NeuralNetwork* net = new NeuralNetwork(input_parameters, output_parameters, layer_count, neuron_count, "tanh", "linear");
 
+	double dt = (end_time - start_time) / batch_size;
+	MatrixXd data = read_csv(batch_size, input_parameters, "C:\\Users\\Yousef Marzouk\\Documents\\MATLAB\\ode_samples.txt");
+	MatrixXd input_data = data(seqN(0, batch_size - 1), seqN(0, input_parameters));
+	MatrixXd expected_data = data(seqN(1, batch_size - 1), seqN(0, input_parameters));
+	array eval_samples(input_data.rows(), input_data.cols(), input_data.data());
+	shuffle_samples(expected_data, input_data);
+	array expected_values(expected_data.rows(), expected_data.cols(), expected_data.data());
+	array input_values(input_data.rows(), input_data.cols(), input_data.data());
 
-	VectorXd time_span = VectorXd::LinSpaced(batch_size, start_time, end_time);
-	MatrixXd input_values = MatrixXd::Zero(batch_size, 1);
-	input_values.col(0) = time_span;
-	MatrixXd eval_samples = input_values;
-	MatrixXd expected_values = read_csv(batch_size, output_parameters, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\ode_samples.txt");
-	shuffle_samples(expected_values, input_values);
+	function<double(array, array)> least_squares = [](array input, array expected) {
 
-	function<double(VectorXd, VectorXd)> least_squares = [](VectorXd input, VectorXd expected) {
-
-		double cost = 0.5 * (input - expected).squaredNorm();
+		double cost = 0.5 * sum(pow(input - expected, 2)).scalar<double>();
 		return cost;
 		};
 
-	function<MatrixXd(MatrixXd, MatrixXd)> least_squares_derivative = [](MatrixXd input, MatrixXd expected) {
-		MatrixXd result = input - expected.transpose();
+	function<array(array, array)> least_squares_derivative = [](array input, array expected) {
+		array result = input - transpose(expected);
 		return result;
 		};
 
 	//net->evolution_train(1000, 0.1, 1e-4, input_values, expected_values, least_squares);
 
-	net->grad_descent_train("AdamW", 200, 1000, 0.0001, 0.9, 0.99, 1e-4, input_values, expected_values, least_squares, least_squares_derivative);
+	net->grad_descent_train("AdamW", 400, 2, 0.0001, 0.9, 0.999, 1e-4, input_values, expected_values, least_squares, least_squares_derivative);
 
-	MatrixXd output = net->evaluate_many(eval_samples);
-	save_samples(output, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\nn_samples.txt");
+	auto end = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> training_time = end - start;
+
+	array output = net->evaluate_many(eval_samples);
+	MatrixXd output_matrix(output.dims(0), output.dims(1));
+	output.host(output_matrix.data());
+	save_samples(output_matrix, "C:\\Users\\Yousef Marzouk\\Documents\\MATLAB\\nn_samples.txt");
+	std::cout << "Training time: " << training_time.count() << " seconds" << std::endl;
 	delete net;
 }
 
@@ -66,7 +77,7 @@ MatrixXd read_csv(int sample_size, int input_parameters, std::string file_path) 
 	std::string line;
 	for (int batch = 0; batch < sample_size; batch++) {
 		for (int col = 0; col < input_parameters - 1; col++) {
-			std::getline(file,line,',');
+			std::getline(file, line, ',');
 			samples(batch, col) = std::stod(line);
 		}
 		std::getline(file, line, '\n');
@@ -76,7 +87,7 @@ MatrixXd read_csv(int sample_size, int input_parameters, std::string file_path) 
 }
 
 void shuffle_samples(MatrixXd& samples, MatrixXd& input) {
-	std::random_device rd;
+	std::random_device rd; // Provides non-deterministic random numbers
 	std::mt19937 gen(rd());
 
 	MatrixXd combined(samples.rows(), samples.cols() + input.cols());

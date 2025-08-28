@@ -3,6 +3,7 @@
 #include <string>
 #include <functional>
 #include <Eigen/Eigen>
+#include <cmath>
 
 using Eigen::VectorXd, Eigen::MatrixXd, Eigen::seqN, std::function;
 
@@ -30,13 +31,17 @@ int main(int argc, char* argv) {
 
 	VectorXd initial_conditions = VectorXd::Zero(2);
 	initial_conditions(0) = 1.0; // Example initial condition
-	initial_conditions(1) = 0.0; // Example initial condition
+	initial_conditions(1) = 2.0; // Example initial condition
 
 	int input_parameters = static_cast<int>(initial_conditions.rows());
-	int batch_size = 1000; // Number of time steps
-	double end_time = 5; // Total time for the simulation
+	int batch_size = 501; // Number of time steps
+	double end_time = 10; // Total time for the simulation
 	MatrixXd samples = solve_ode_rk4(initial_conditions, batch_size, end_time, simple_pendulum);
-	save_samples(samples, "C:\\Users\\skylo\\OneDrive\\Documents\\MATLAB\\ode_samples.txt");
+	const double pi = 3.14159265358979323846;
+	for (int i = 0; i < samples.rows(); i++) {
+		samples(i, 0) = fmod(samples(i, 0) + pi, 2 * pi) - pi;
+	}
+	save_samples(samples, "C:\\Users\\Yousef Marzouk\\Documents\\MATLAB\\ode_samples.txt");
 }
 
 MatrixXd solve_ode_euler(VectorXd initial_conditions, int batch_size,
